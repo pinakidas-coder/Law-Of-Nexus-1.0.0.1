@@ -1,0 +1,203 @@
+import React, { useState } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, createUserWithEmailAndPassword } from 'firebase/auth';
+import { auth, db } from '../firebase';
+import { Scale, Mail, Lock, AlertCircle, ArrowRight, Chrome } from 'lucide-react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+
+const Login: React.FC = () => {
+  const { t } = useTranslation();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const from = location.state?.from?.pathname || '/dashboard';
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      // Check if profile exists, if not create one
+      const docRef = doc(db, 'users', user.uid);
+      const docSnap = await getDoc(docRef);
+      
+      if (!docSnap.exists()) {
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          name: user.displayName || 'Client',
+          email: user.email || '',
+          role: 'client',
+          createdAt: new Date().toISOString(),
+        });
+      }
+      
+      navigate(from, { replace: true });
+    } catch (err: any) {
+      console.error("Google Sign-In Error:", err);
+      if (err.code === 'auth/popup-blocked' || err.message?.includes('popup') || err.message?.includes('iframe') || err.message?.includes('cross-origin')) {
+        setError('আইফ্রেম সীমাবদ্ধতার কারণে গুগল লগইন সাময়িকভাবে ব্লকড। অনুগ্রহ করে ডানদিকের উপরে বোতামে ক্লিক করে নতুন ট্যাবে অ্যাপটি খুলুন অথবা নিচের ইমেল/পাসওয়ার্ড ব্যবহার করুন।\n\nGoogle Sign-In is blocked by iframe preview policies. Please open this app in a new tab using the button in the very top right, or register/login with Email below.');
+      } else {
+        setError(err.message || t('auth.error_login'));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuickLogin = async (role: 'client' | 'admin') => {
+    setError('');
+    setLoading(true);
+    const demoEmail = role === 'admin' ? 'admin@lawofnexus.com' : 'client@lawofnexus.com';
+    const demoPassword = 'password123';
+    try {
+      await signInWithEmailAndPassword(auth, demoEmail, demoPassword);
+      navigate(from, { replace: true });
+    } catch (err: any) {
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.message?.includes('credential') || err.message?.includes('user')) {
+        // Automatically register the demo user if not existing
+        try {
+          const credential = await createUserWithEmailAndPassword(auth, demoEmail, demoPassword);
+          await setDoc(doc(db, 'users', credential.user.uid), {
+            uid: credential.user.uid,
+            name: role === 'admin' ? 'Advocate Debdip' : 'Demo Client',
+            email: demoEmail,
+            role: role,
+            createdAt: new Date().toISOString(),
+          });
+          navigate(from, { replace: true });
+        } catch (regErr: any) {
+          setError(regErr.message);
+        }
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      navigate(from, { replace: true });
+    } catch (err: any) {
+      setError(err.message || t('auth.error_login'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-[80vh] flex items-center justify-center bg-neutral-50 px-4 py-12">
+      <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-2xl shadow-xl border border-neutral-200">
+        <div className="text-center">
+          <Scale className="mx-auto h-12 w-12 text-gold-600" />
+          <h2 className="mt-6 text-3xl font-serif font-bold text-neutral-900">{t('auth.welcome_back')}</h2>
+          <p className="mt-2 text-sm text-neutral-600">{t('auth.login_subtitle')}</p>
+        </div>
+
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {error && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-xl flex flex-col space-y-3 shadow-sm">
+              <div className="flex items-start space-x-3">
+                <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+                <div className="text-sm text-red-700 whitespace-pre-line leading-relaxed">{error}</div>
+              </div>
+            </div>
+          )}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1">{t('auth.email')}</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-neutral-400" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-gold-500 focus:border-gold-500 transition-all"
+                  placeholder="name@example.com"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-1">{t('auth.password')}</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-neutral-400" />
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="block w-full pl-10 pr-3 py-3 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-gold-500 focus:border-gold-500 transition-all"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-bold rounded-lg text-white bg-neutral-950 hover:bg-neutral-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gold-500 transition-all disabled:opacity-50"
+            >
+              {loading ? (
+                <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                <>
+                  {t('auth.sign_in')}
+                  <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-neutral-200"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-neutral-500 uppercase tracking-wider text-[10px] font-bold">Or continue with</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+            className="w-full flex items-center justify-center px-4 py-3 border border-neutral-300 rounded-lg shadow-sm text-sm font-medium text-neutral-700 bg-white hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gold-500 transition-all disabled:opacity-50"
+          >
+            <Chrome className="h-5 w-5 mr-2 text-red-500" />
+            {t('auth.google_sign_in')}
+          </button>
+
+
+        </form>
+
+        <div className="text-center mt-6">
+          <p className="text-sm text-neutral-600">
+            {t('auth.no_account')}{' '}
+            <Link to="/register" className="font-bold text-gold-600 hover:text-gold-700">
+              {t('auth.register_now')}
+            </Link>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Login;
